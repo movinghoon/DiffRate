@@ -42,7 +42,7 @@ class DiffRateBlock(Block):
         size = self._diffrate_info["size"]
         mask = self._diffrate_info["mask"]
         x_attn, attn = self.attn(self.norm1(x), size, mask=self._diffrate_info["mask"])
-        x = x + self.drop_path(x_attn)
+        x = x + self.drop_path1(self.ls1(x_attn))
 
         # importance metric
         cls_attn = attn[:, :, 0, 1:]
@@ -88,7 +88,7 @@ class DiffRateBlock(Block):
                 mask = mask * merge_mask
 
             self._diffrate_info["mask"] = mask
-            x = x + self.drop_path(self.mlp(self.norm2(x)))
+            x = x + self.drop_path2(self.ls2(self.mlp(self.norm2(x))))
             
         else:
             # pruning
@@ -110,7 +110,7 @@ class DiffRateBlock(Block):
                 if self._diffrate_info["trace_source"]:
                     self._diffrate_info["source"] = merge(self._diffrate_info["source"], mode="amax")
 
-            x = x + self.drop_path(self.mlp(self.norm2(x)))
+            x = x + self.drop_path2(self.ls2(self.mlp(self.norm2(x))))
         return x
                 
 
