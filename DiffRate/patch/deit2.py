@@ -34,7 +34,7 @@ class DiffRateBlock(Block):
     def introduce_diffrate(self,patch_number, prune_granularity, merge_granularity):
         self.prune_ddp = DiffRate(patch_number,prune_granularity)
         self.merge_ddp = DiffRate(patch_number,merge_granularity)
-        if self.metric_layer is None:
+        if not hasattr(self, 'metric_layer') or self.metric_layer is None: # self.metric_layer is None:
             head_dim = self.attn.head_dim
             dim = head_dim * self.attn.num_heads
             self.metric_layer = nn.Linear(dim, head_dim)
@@ -57,6 +57,7 @@ class DiffRateBlock(Block):
         idx = torch.cat((cls_index, idx+1), dim=1)
         
         # sorting
+        x_input = torch.gather(x_input, dim=1, index=idx.unsqueeze(-1).expand(-1, -1, x_input.shape[-1]))
         x = torch.gather(x, dim=1, index=idx.unsqueeze(-1).expand(-1, -1, x.shape[-1]))
         self._diffrate_info["size"] = torch.gather(self._diffrate_info["size"], dim=1, index=idx.unsqueeze(-1))
         mask = torch.gather( mask, dim=1, index=idx)
@@ -65,40 +66,13 @@ class DiffRateBlock(Block):
 
         
         if self.training:
-            # pruning, pruning only needs to generate masks during training
-            last_token_number = mask[0].sum().int()
-            prune_kept_num = self.prune_ddp.update_kept_token_number()      # expected prune compression rate, has gradiet
-            self._diffrate_info["prune_kept_num"].append(prune_kept_num)
-            if prune_kept_num < last_token_number:        # make sure the kept token number is a decreasing sequence
-                prune_mask = self.prune_ddp.get_token_mask(last_token_number)
-                mask = mask * prune_mask.expand(B, -1)
-
-            mid_token_number = min(last_token_number, int(prune_kept_num)) # token number after pruning
-                
-            # merging
-            merge_kept_num = self.merge_ddp.update_kept_token_number()
-            self._diffrate_info["merge_kept_num"].append(merge_kept_num)
-
-            if merge_kept_num < mid_token_number:
-                merge_mask = self.merge_ddp.get_token_mask(mid_token_number)
-                x_compressed, size_compressed = x[:, mid_token_number:], self._diffrate_info["size"][:,mid_token_number:]
-                merge_func, node_max = get_merge_func(metric=x[:, :mid_token_number].detach(), kept_number=int(merge_kept_num))
-                x = merge_func(x[:,:mid_token_number],  mode="mean", training=True)
-                # optimize proportional attention in ToMe by considering similarity
-                size = torch.cat((self._diffrate_info["size"][:, :int(merge_kept_num)],self._diffrate_info["size"][:, int(merge_kept_num):mid_token_number]*node_max[..., None]),dim=1)
-                size = size.clamp(1)
-                size = merge_func(size,  mode="sum", training=True)
-                x = torch.cat([x, x_compressed], dim=1)
-                self._diffrate_info["size"] = torch.cat([size, size_compressed], dim=1)
-                mask = mask * merge_mask
-
-            self._diffrate_info["mask"] = mask
-            x = x + self.drop_path2(self.ls2(self.mlp(self.norm2(x))))
+            raise NotImplementedError
             
         else:
             # pruning
             prune_kept_num = self.prune_ddp.kept_token_number
             x = x[:, :prune_kept_num]
+            x_input = x_input[:, :prune_kept_num]
             self._diffrate_info["size"] = self._diffrate_info["size"][:, :prune_kept_num]
             if self._diffrate_info["trace_source"]:
                 self._diffrate_info["source"] = self._diffrate_info["source"][:, :prune_kept_num]
@@ -112,7 +86,7 @@ class DiffRateBlock(Block):
                     merge, node_max = get_merge_func(metric_x, kept_number=merge_kept_num)
                 else:
                     merge, node_max = get_merge_func(x.detach(), kept_number=merge_kept_num)
-                x = merge(x,mode='mean')
+                x = merge(x, mode='mean')
                 # optimize proportional attention in ToMe by considering similarity, this is benefit to the accuracy of off-the-shelf model.
                 self._diffrate_info["size"] = torch.cat((self._diffrate_info["size"][:, :merge_kept_num],self._diffrate_info["size"][:, merge_kept_num:]*node_max[..., None] ),dim=1)
                 self._diffrate_info["size"] = merge(self._diffrate_info["size"], mode='sum')
