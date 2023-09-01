@@ -83,6 +83,7 @@ class DiffRateBlock(Block):
             if merge_kept_num < prune_kept_num:
                 if self.metric_layer is not None:
                     metric_x = self.metric_layer(x_input.detach())
+                    metric_x = metric_x / metric_x.norm(dim=-1, keepdim=True)
                     merge, node_max = get_merge_func(metric_x, kept_number=merge_kept_num)
                 else:
                     merge, node_max = get_merge_func(x.detach(), kept_number=merge_kept_num)
