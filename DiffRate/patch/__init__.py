@@ -6,8 +6,9 @@
 # --------------------------------------------------------
 
 from .deit import apply_patch as deit
+from .deit2 import apply_patch as deit2
 from .mae import apply_patch as mae
 # from .caformer import apply_patch as caformer
 
 # __all__ = ["deit", "mae", "caformer"]
-__all__ = ["deit", "mae"]
+__all__ = ["deit", "mae", "deit2"]
